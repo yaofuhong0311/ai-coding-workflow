@@ -1,0 +1,9 @@
+# ai-coding-workflow
+
+ai-coding-workflow/examples/distill.py
+ai-coding-workflow/examples/distill.log
+*.pyc
+__pycache__/
+.env
+*.db
+.DS_Store

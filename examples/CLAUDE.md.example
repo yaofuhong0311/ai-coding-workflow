@@ -1,0 +1,91 @@
+# Global Rules — CLAUDE.md 示例
+
+> 这是 Claude Code 全局规则文件的示例模板。
+> 实际使用时放在 `~/.claude/CLAUDE.md`，每次 CC session 自动加载。
+
+## ruflo 已通过系统 hooks 自动挂载
+> ruflo MCP 已在 settings.json 配置，无需在对话中声明。
+> 所有 coding 操作（写文件、执行命令）均自动触发 ruflo hooks。
+
+---
+
+## 反幻觉规则（强制执行）
+
+### 读优先于写
+- **修改任何文件前，先 read 该文件确认当前内容**，不凭记忆改代码
+- 调用任何函数/API 前，先 grep/read 确认它在代码库中真实存在
+- 不要凭记忆写 import 路径，用 find/ls 实际确认文件位置
+- 新增代码引用已有模块时，先读该模块确认导出内容和函数签名
+
+### 不要编造
+- 不确定某个函数签名、配置项、API 行为时，**先查看源码或文档**
+- 禁止臆造文件路径、模块名、函数参数、配置字段
+- 当不确定时说"我需要先确认"，不猜
+
+### 基于现有代码扩展
+- 新功能必须先阅读相关模块的现有实现，**遵循已有的模式和约定**
+- 不要引入项目中未使用的新依赖，除非明确要求
+- 复用已有的工具函数/类型定义，不要重复造轮子
+- 新增文件的命名、目录位置、代码风格要和同级文件保持一致
+
+---
+
+## ruflo 使用规范（编码任务强制执行）
+
+收到编码任务（实现/写/开发/重构/设计/修复/优化）时：
+1. **开始前** 调用 `mcp__ruflo__memory_search` 查询相关历史经验
+2. **完成后** 调用 `mcp__ruflo__memory_store` 记录本次经验
+3. 如果 ruflo 工具不可用，跳过
+
+## 学习记录规范（自动触发）
+
+以下情况**立即**追加到当前项目的 `.learnings/LEARNINGS.md`：
+- 命令执行失败（非零退出码）→ 同时写 `.learnings/ERRORS.md`
+- 用户纠正了我 → category: `correction`
+- 发现更好的做法 → category: `best_practice`
+- 知识过时或不准确 → category: `knowledge_gap`
+
+**记录格式：**
+```
+## [LRN-YYYYMMDD-XXX] category
+**Logged**: 时间
+**Priority**: low/medium/high
+**Area**: frontend/backend/infra/tests/config
+
+### Summary
+一句话说明学到了什么
+
+### Details
+完整上下文：发生了什么、错在哪、正确做法是什么
+
+### Suggested Action
+具体的改进建议
+---
+```
+
+---
+
+## 经过验证的编码经验
+
+> 本节由蒸馏系统定期更新，每条经验均来自实际 push 的代码。
+
+<!-- DISTILLED_EXPERIENCE_START -->
+
+> 最近蒸馏时间：2026-03-13
+
+### 架构设计
+
+- 📌[project_a][FACT] 服务层只做 flush 不做 commit，由 session 管理器统一管理事务
+- ⚙️[project_a][RULE] Token 消耗优先级: source_type DESC + expire_at ASC（先过期先扣）
+- ⚠️[project_a][GOTCHA] 第三方 API 响应中某些字段常为 null，提取逻辑需要多级 fallback
+
+### Bug 与踩坑
+
+- ⚠️[project_b][GOTCHA] alembic autogenerate 会检测大量无关变更，需要手动清理 migration 文件
+- ⚠️[project_a][GOTCHA] 环境变量前缀冲突可能导致配置初始化失败，需要隔离 Settings 类
+
+### 算法与数据结构
+
+- ⚙️[practice][RULE] 贪心排序 + DP 转移 + 二分查找是经典组合，适用于区间调度类问题
+
+<!-- DISTILLED_EXPERIENCE_END -->
