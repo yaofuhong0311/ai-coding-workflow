@@ -1,179 +1,169 @@
-# AI Coding Workflow
+# ai-coding-workflow
 
-> 一套基于 Claude Code + ruflo + OpenClaw 的 AI 辅助编程工作流，包含经验蒸馏系统、反幻觉规则和多 Agent 协作方案。
+让 AI Coding Agent 从错误中学习的经验蒸馏系统。
 
-## 为什么做这个？
-
-AI Coding Agent（如 Claude Code）有一个核心问题：**它会反复犯同样的错误**。每次新 session 启动，之前踩过的坑、学到的经验全部清零。
-
-这就像一个永远不长记忆的实习生——能力很强，但每天都要从头教一遍。
-
-本项目通过构建一套 **经验蒸馏 + 反幻觉规则 + 自动化工作流**，让 AI Coding Agent 具备持续学习和自我改进的能力。
-
-## 核心理念
-
-```
-Episodic Memory → Semantic Memory → Procedural Memory
-（每次编码的原始经历）→（提炼出的通用知识）→（内化为行为规则）
+```bash
+# 扫描所有项目的编码经验，生成蒸馏预览
+python distill.py --dry-run
 ```
 
-参考 PlugMem（arXiv:2603.03296, UIUC+Microsoft）的记忆层级理论，我们在 AI Coding 场景中实现了类似的三层记忆转化：
-
-1. **Episodic（情景记忆）**：ruflo 自动记录每次编码中的经验到 SQLite + `.learnings/` 文件
-2. **Semantic（语义记忆）**：蒸馏脚本汇总、去重、分类、原子化，提炼为通用知识
-3. **Procedural（程序记忆）**：写入 `CLAUDE.md` 全局规则文件，每次 session 自动加载，成为 Agent 的行为习惯
-
-## 整体架构
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     每日编码工作流                              │
-├──────────────┬──────────────┬───────────────────────────────┤
-│  superpowers │  Claude Code │       ruflo (MCP)             │
-│  脑爆 & 计划  │  执行编码      │  自动记录经验到 memory.db       │
-│              │              │  + .learnings/ markdown        │
-├──────────────┴──────────────┴───────────────────────────────┤
-│                    蒸馏系统 (distill.py)                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │ 汇总来源  │→│ 去重合并  │→│ 分类打标  │→│ 原子化拆分  │  │
-│  │ ruflo DB │  │ by key   │  │ 6 类别    │  │ FACT/RULE/ │  │
-│  │ .learnings│  │          │  │ + 关键词  │  │ GOTCHA     │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                 人工审核 (Human-in-the-Loop)                  │
-│  OpenClaw → 飞书推送预览 → 用户确认「确认蒸馏」或「跳过」          │
-├─────────────────────────────────────────────────────────────┤
-│                    CLAUDE.md 全局规则                         │
-│  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
-│  │ 反幻觉规则      │  │ 蒸馏经验库      │  │ 编码规范      │  │
-│  │ 读优先于写      │  │ 按类别组织      │  │ ruflo 规范    │  │
-│  │ 不要编造        │  │ 原子化条目      │  │ 学习记录规范  │  │
-│  │ 基于现有代码扩展 │  │ emoji+tag 标记 │  │ Plan 执行    │  │
-│  └────────────────┘  └────────────────┘  └──────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+🔍 扫描 ~/coding ...
+  [ruflo] project_a: 10 条
+  [ruflo] project_b: 3 条
+  [ruflo] project_c: 19 条
+
+📊 合并前：32 条
+📊 去重后：32 条
+
+### 架构设计
+- 📌[project_a][FACT] LangGraph 支持从同一 node 多条 add_edge() 实现并行 fan-out
+- ⚠️[project_c][GOTCHA] 第三方 API 的 usage 字段常为 null，需要三级 fallback 提取
+- ⚙️[project_c][RULE] 服务层只做 flush 不做 commit，由 session 管理器统一管理事务
+
+### Bug 与踩坑
+- ⚠️[project_a][GOTCHA] pytest 会收集所有 test_* 函数，即使是被 import 的，需要 __test__=False
+- ⚠️[project_c][GOTCHA] alembic autogenerate 检测大量无关变更，需手动清理 migration 文件
 ```
 
-## 工作流详解
+蒸馏后的经验写入 `CLAUDE.md`，下次 Claude Code session 自动加载 → Agent 不再重复犯同样的错。
 
-### Phase 1: 脑爆 → 计划 → 执行
+## 解决什么问题
 
-我的编码工作流分三步，有人参与，不跳过：
+AI Coding Agent（Claude Code / Cursor / Copilot）每次新 session 都是全新开始：
 
-1. **superpowers 脑爆**：用脑爆模型讨论需求，发散思路，确定方向
-2. **superpowers plan**：写结构化实施计划，确认后再动手
-3. **Claude Code 执行**：按计划编码，ruflo 在执行阶段自动生效
+- 上次踩的坑 → 忘了，再踩一遍
+- 团队的编码约定 → 不知道，按自己的来
+- 某个 API 的 workaround → 不记得，重新探索
 
-> 不要跳过前两步直接开始写代码。先对齐再动手。
+**本工具把每次编码积累的经验自动蒸馏，写入全局规则文件，让 Agent 具备跨 session 的长期记忆。**
 
-### Phase 2: 经验自动采集
+## 快速开始
 
-编码过程中，经验从两个来源自动采集：
+```bash
+git clone https://github.com/yaofuhong0311/ai-coding-workflow.git
+cd ai-coding-workflow
 
-**ruflo（MCP 工具）**
-- 通过 `memory_search` / `memory_store` 读写 SQLite 数据库
-- 每次编码任务开始前查询历史经验
-- 完成后自动记录本次经验
+# 1. 配置项目扫描路径（默认 ~/coding）
+vim config.yaml
 
-**.learnings/ 文件**
-- 命令执行失败 → 自动写入 `ERRORS.md`
-- 用户纠正 → 写入 `LEARNINGS.md`，category: `correction`
-- 发现更好做法 → category: `best_practice`
-- 知识过时 → category: `knowledge_gap`
+# 2. 预览蒸馏结果
+python distill.py --dry-run
 
-### Phase 3: 蒸馏
+# 3. 确认后写入 CLAUDE.md
+python distill.py --commit
+```
 
-每天 19:00，cron 定时触发 `distill.py`：
+### 配置
 
-1. **汇总**：扫描所有项目的 ruflo DB + `.learnings/` 文件
-2. **去重**：基于 key 去重，保留更详细的版本
-3. **分类**：关键词匹配分到 6 个类别（架构设计 / 算法 / Bug踩坑 / 性能优化 / 纠正记录 / 其他）
-4. **原子化**：把复合经验拆成独立知识点，每条打标签
-   - `FACT` 📌 → 事实性知识
-   - `RULE` ⚙️ → 行为规则
-   - `GOTCHA` ⚠️ → 踩坑记录
-5. **人工审核**：通过 OpenClaw 推送飞书通知，用户回复「确认蒸馏」才写入
+```yaml
+# config.yaml
+coding_root: ~/coding          # 项目根目录
+claude_md: ~/.claude/CLAUDE.md  # CC 全局规则文件
+notify:
+  channel: feishu               # 通知渠道（feishu/slack/none）
+  target: YOUR_ID               # 接收通知的用户 ID
+```
 
-### Phase 4: 行为内化
+## 工作原理
 
-确认后，蒸馏产出写入 `CLAUDE.md` 的 `<!-- DISTILLED_EXPERIENCE -->` 区块。下次 Claude Code session 启动时自动加载，成为 Agent 的"本能反应"。
+```
+编码中                    每天 19:00              下次 session
+┌──────────┐            ┌──────────┐           ┌──────────┐
+│ ruflo DB │──┐         │          │           │          │
+│ (SQLite) │  ├──汇总──→│ distill  │──确认──→  │CLAUDE.md │──自动加载→ Agent 行为改变
+│.learnings│──┘    去重  │   .py    │  写入     │          │
+│ (*.md)   │      分类   │          │           │          │
+└──────────┘     原子化  └──────────┘           └──────────┘
+```
+
+**三步记忆转化：**
+
+| 层级 | 对应 | 来源 | 持久性 |
+|------|------|------|--------|
+| Episodic（情景记忆） | ruflo DB + .learnings/ | 每次编码自动采集 | 项目级 |
+| Semantic（语义记忆） | 蒸馏产出 | distill.py 汇总提炼 | 跨项目 |
+| Procedural（程序记忆） | CLAUDE.md 规则 | 确认后写入 | 全局永久 |
+
+## 蒸馏管道
+
+```python
+# distill.py 核心流程
+all_memories = collect_all()       # 扫描所有项目的 ruflo DB + .learnings/
+deduped = deduplicate(all_memories) # 基于 key 去重
+categories = categorize(deduped)    # 关键词匹配分 6 类
+block = format_block(categories)    # 原子化拆分 + 打标签(FACT/RULE/GOTCHA)
+```
+
+**原子化拆分示例：**
+```
+输入: "1) 服务层只做 flush 不做 commit；2) 跨模块用 lazy import 避免循环依赖"
+
+输出:
+  ⚙️[RULE] 服务层只做 flush 不做 commit
+  ⚙️[RULE] 跨模块用 lazy import 避免循环依赖
+```
+
+**自动打标签规则：**
+- `FACT` 📌 — 事实（"LangGraph 支持并行 fan-out"）
+- `RULE` ⚙️ — 规则（"必须先 read 再 write"）
+- `GOTCHA` ⚠️ — 踩坑（"pytest 会收集 import 的 test_* 函数"）
 
 ## 反幻觉规则
 
-AI Coding Agent 最常见的问题就是"幻觉"——凭记忆编造不存在的 API、文件路径、函数签名。
+写入 CLAUDE.md 最前面的三条强制规则，预防 AI 编码幻觉：
 
-我设计了三条强制执行的规则：
+```markdown
+### 读优先于写
+修改任何文件前，先 read 确认当前内容。
+调用任何函数前，先 grep 确认它真实存在。
 
-### 1. 读优先于写
-```
-修改任何文件前，先 read 该文件确认当前内容。
-调用任何函数前，先 grep/read 确认它在代码库中真实存在。
-不要凭记忆写 import 路径，用 find/ls 实际确认文件位置。
-```
+### 不要编造
+不确定时查源码，不猜。
 
-### 2. 不要编造
-```
-不确定某个函数签名、配置项、API 行为时，先查看源码或文档。
-禁止臆造文件路径、模块名、函数参数、配置字段。
-当不确定时说"我需要先确认"，不猜。
+### 基于现有代码扩展
+先读同类模块的实现，遵循已有模式。
 ```
 
-### 3. 基于现有代码扩展
-```
-新功能必须先阅读相关模块的现有实现，遵循已有的模式和约定。
-不要引入项目中未使用的新依赖，除非明确要求。
-复用已有的工具函数/类型定义，不要重复造轮子。
-```
+> 反幻觉 = 前置过滤器（预防），ruflo = 后置安全网（兜底）。
 
-> **定位**：这是 semantic memory 矫正 procedural memory 的默认习惯。概率性改善，非确定性消除。和 ruflo 的关系是：反幻觉 = 前置过滤器（预防），ruflo = 后置安全网（兜底）。
-
-## 效果
-
-- 蒸馏产出已原子化：每条经验按编号/分号拆分，自动打 FACT/RULE/GOTCHA 标签
-- 支付模块从零搭建，全程使用本工作流，7 个单元测试一次通过
-- 反幻觉规则上线后，"编造不存在的文件路径"类错误显著减少
-
-## 文件说明
+## 完整工作流
 
 ```
-ai-coding-workflow/
-├── README.md                          # 本文件
+superpowers 脑爆 → superpowers plan → Claude Code 执行（ruflo 自动挂载）
+         ↑                                    ↓
+         └──── CLAUDE.md 自动加载 ←── distill.py 蒸馏 ←──┘
+```
+
+1. **脑爆**：讨论需求，发散方案
+2. **计划**：写结构化 plan，确认后动手
+3. **执行**：CC 按 plan 编码，ruflo 自动记录经验
+4. **蒸馏**：cron 每天汇总 → 人工确认 → 写入 CLAUDE.md
+5. **加载**：下次 session 自动生效
+
+详见 [docs/architecture.md](docs/architecture.md)
+
+## 文件结构
+
+```
+├── distill.py              # 蒸馏脚本（可直接运行）
+├── config.yaml             # 配置文件
+├── templates/
+│   └── CLAUDE.md.template  # 全局规则模板
 ├── docs/
-│   ├── architecture.md                # 工具链详解：CC + ruflo + OpenClaw 各自角色
-│   ├── self-evolution.md              # 蒸馏系统设计思路和原理
-│   └── anti-hallucination.md          # 反幻觉规则的设计哲学
-├── examples/
-│   ├── distill.py                     # 蒸馏脚本（脱敏版）
-│   ├── CLAUDE.md.example              # 全局规则文件示例
-│   ├── learnings-format.md            # .learnings/ 记录格式规范
-│   └── cron-setup.md                  # 定时任务配置指南
-└── diagrams/
-    └── workflow.md                    # 流程图（Mermaid）
+│   ├── architecture.md     # 工具链详解
+│   ├── self-evolution.md   # 蒸馏系统设计
+│   └── anti-hallucination.md
+└── examples/
+    └── learnings-format.md # .learnings/ 记录格式
 ```
 
 ## 技术栈
 
-- **Claude Code** — AI Coding Agent，执行编码任务
-- **ruflo (claude-flow)** — MCP 工具，自动记录编码经验到 SQLite
-- **OpenClaw** — AI Agent 运行时，负责定时任务、飞书通知、人工审核流程
-- **Python 3.10+** — 蒸馏脚本
-- **Cron** — 定时触发蒸馏
-- **飞书** — 人工审核通道
-
-## 适用场景
-
-- 使用 Claude Code / Cursor / Copilot 等 AI Coding Agent 的开发者
-- 希望 AI Agent 能从错误中学习的团队
-- 需要在多项目间共享编码经验的场景
-
-## 设计决策记录
-
-| 决策 | 选择 | 原因 |
-|------|------|------|
-| 经验存储 | 文件（SQLite + Markdown）| 简单、可版本控制、无需额外基础设施 |
-| 蒸馏触发 | 每日 cron | 频率刚好，不影响编码流程 |
-| 人工审核 | 飞书通知确认 | 防止低质量经验污染规则库 |
-| 知识组织 | 平铺列表 + 标签 | 当前规模够用，50+ 条后考虑知识图谱 |
-| 原子化粒度 | 每条一个知识点 | 避免复合条目导致检索噪声 |
+- Python 3.10+（标准库，零依赖）
+- Claude Code — AI Coding Agent
+- ruflo — MCP 工具，自动记录编码经验
+- OpenClaw — 定时任务 + 通知推送（可选）
 
 ## License
 

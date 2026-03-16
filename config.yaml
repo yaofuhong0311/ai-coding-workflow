@@ -1,0 +1,23 @@
+# ai-coding-workflow 配置
+
+# 项目扫描根目录
+coding_root: ~/coding
+
+# Claude Code 全局规则文件路径
+claude_md: ~/.claude/CLAUDE.md
+
+# 蒸馏 pending 文件路径
+pending_file: ~/.openclaw/workspace/memory/distill-pending.json
+
+# 通知配置（可选）
+notify:
+  # 通知渠道: feishu / slack / none
+  channel: none
+  # 接收通知的用户 ID
+  target: YOUR_TARGET_ID
+
+# 定时任务
+cron:
+  # 每天几点运行蒸馏
+  hour: 19
+  minute: 0
