@@ -1,11 +1,21 @@
 # 工具链架构详解
 
-## 三个工具，三个角色
+## 四个工具，四个角色
 
 ### Claude Code (CC) — 执行者
 Claude Code 是实际写代码的 Agent。它能读写文件、执行命令、搜索代码库。
 
 **但它有个致命缺陷：没有跨 session 记忆。** 每次新对话，之前学到的一切全部丢失。
+
+### ast-grep — 执法者
+ast-grep 是一个基于 AST（抽象语法树）的代码扫描工具，通过 PostToolUse hook 挂载在 CC 上：
+
+- CC 每次写/编辑 `.py` 文件后，hook **同步**触发 ast-grep 扫描
+- 违规信息注入 CC 上下文，CC 被迫看到并修复
+- 8 条 Python 规则覆盖：裸 except、可变默认参数、eval/exec、吞异常、async 阻塞、星号导入、硬编码密钥、print 残留
+- 规则是 YAML 配置，可持续扩展
+
+ast-grep 解决了"执行"问题——代码质量规则不再是建议，而是门禁。CC 无法绕过。
 
 ### ruflo (claude-flow) — 记录者
 ruflo 是一个 MCP（Model Context Protocol）工具，以 hooks 形式挂载在 CC 上：
@@ -28,7 +38,7 @@ OpenClaw 是 AI Agent 运行时，在本工作流中承担：
 ## 三步工作流
 
 ```
-superpowers 脑爆 → superpowers plan → CC 执行（ruflo 自动挂载）
+superpowers 脑爆 → superpowers plan → CC 执行（ruflo + ast-grep 自动挂载）
 ```
 
 **第一步：脑爆**
@@ -43,9 +53,14 @@ superpowers 脑爆 → superpowers plan → CC 执行（ruflo 自动挂载）
 
 **第三步：执行**
 - CC 按 plan 逐步实现
+- ast-grep hook 实时拦截 Python 反模式（同步，不可绕过）
 - ruflo 自动记录经验
 - 学习记录自动写入 `.learnings/`
 - 产出：代码 + 经验数据
+
+**代码审查（可选）**
+- 日常：superpowers code-reviewer（快速单 Agent 审查）
+- 合并前：`/fagan-review`（双 Agent 并行审查——结构检查 + 语义检查，合并去重出报告）
 
 ## 为什么不直接起 CC 写代码？
 

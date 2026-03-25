@@ -97,21 +97,24 @@ Procedural Memory（程序记忆）
 ```mermaid
 flowchart TD
     A[编码任务] --> B[Claude Code 执行]
-    B --> C{ruflo hooks}
-    C --> D[memory.db]
-    C --> E[.learnings/]
-    
+    B --> C{ast-grep hook}
+    C -->|违规| C1[注入上下文<br/>强制修复]
+    C1 --> B
+    C -->|通过| C2{ruflo hooks}
+    C2 --> D[memory.db]
+    C2 --> E[.learnings/]
+
     F[Cron 19:00] --> G[distill.py]
     D --> G
     E --> G
-    
+
     G --> H[汇总 & 去重]
     H --> I[分类 & 原子化]
     I --> J[OpenClaw → 飞书通知]
-    
+
     J -->|确认蒸馏| K[写入 CLAUDE.md]
     J -->|跳过| L[丢弃本次]
-    
+
     K --> M[下次 CC session 自动加载]
     M --> A
 ```

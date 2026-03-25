@@ -8,11 +8,14 @@ flowchart TD
         A[需求/任务] --> B[superpowers 脑爆<br/>发散思路、探索方案]
         B --> C[superpowers plan<br/>写结构化计划]
         C --> D[用户确认 plan]
-        D --> E[Claude Code 执行<br/>ruflo hooks 自动挂载]
+        D --> E[Claude Code 执行<br/>ruflo + ast-grep 自动挂载]
     end
 
-    subgraph Phase2["Phase 2: 经验自动采集"]
-        E --> F[ruflo memory.db<br/>SQLite 存储]
+    subgraph Phase2["Phase 2: 实时质量控制 + 经验采集"]
+        E --> F1[ast-grep hook<br/>同步扫描 Python 反模式]
+        F1 -->|违规| F2[注入上下文<br/>强制修复]
+        F2 --> E
+        F1 -->|通过| F[ruflo memory.db<br/>SQLite 存储]
         E --> G[.learnings/ 文件<br/>Markdown 记录]
         E --> H[用户纠正<br/>自动捕获]
     end
@@ -58,25 +61,44 @@ flowchart LR
     J -->|跳过| L[删除 pending]
 ```
 
-## 反幻觉规则 vs ruflo
+## 三层防御体系
 
 ```mermaid
 flowchart LR
-    subgraph Before["编码前"]
-        A[反幻觉规则<br/>读优先于写<br/>不要编造<br/>基于现有扩展] --> B[约束 Agent 行为]
+    subgraph Layer1["第一层：软约束"]
+        A[反幻觉规则<br/>读优先于写<br/>不要编造<br/>基于现有扩展] --> B[约束 Agent 行为意识]
     end
 
-    subgraph During["编码中"]
+    subgraph Layer2["第二层：硬执行"]
         B --> C[Claude Code<br/>执行编码]
-        C --> D[ruflo 记录经验]
+        C --> D{ast-grep<br/>PostToolUse hook}
+        D -->|违规| E[注入上下文<br/>强制修复]
+        E --> C
+        D -->|通过| F[代码写入成功]
     end
 
-    subgraph After["编码后"]
-        D --> E[蒸馏系统<br/>提炼新规则]
-        E --> A
+    subgraph Layer3["第三层：后置记录"]
+        F --> G[ruflo 记录经验]
+        G --> H[蒸馏系统<br/>提炼新规则]
+        H --> A
     end
 
-    style Before fill:#ffebee
-    style During fill:#e8f5e9
-    style After fill:#e3f2fd
+    style Layer1 fill:#ffebee
+    style Layer2 fill:#fff3e0
+    style Layer3 fill:#e3f2fd
+```
+
+## 代码审查体系
+
+```mermaid
+flowchart TD
+    A[代码变更] --> B{审查场景?}
+    B -->|日常开发<br/>每个 task 完成后| C[superpowers<br/>code-reviewer<br/>单 Agent 快速审查]
+    B -->|合并到 main<br/>安全敏感代码| D[/fagan-review<br/>双 Agent 并行审查]
+
+    D --> E[Agent A: 结构检查<br/>ast-grep + ruff + checklist]
+    D --> F[Agent B: 语义检查<br/>设计/逻辑/架构/安全]
+    E --> G[合并去重<br/>按严重度排序]
+    F --> G
+    G --> H[缺陷报告<br/>CRITICAL → IMPORTANT → MINOR → NIT]
 ```

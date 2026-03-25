@@ -1,6 +1,6 @@
 # ai-coding-workflow
 
-让 AI Coding Agent 从错误中学习的经验蒸馏系统。
+让 AI Coding Agent 从错误中学习 + 机械化代码质量执行的工程体系。
 
 ```bash
 # 扫描所有项目的编码经验，生成蒸馏预览
@@ -70,9 +70,12 @@ notify:
 ```
 编码中                    每天 19:00              下次 session
 ┌──────────┐            ┌──────────┐           ┌──────────┐
-│ ruflo DB │──┐         │          │           │          │
-│ (SQLite) │  ├──汇总──→│ distill  │──确认──→  │CLAUDE.md │──自动加载→ Agent 行为改变
-│.learnings│──┘    去重  │   .py    │  写入     │          │
+│ ast-grep │──拦截──→ CC│          │           │          │
+│(实时扫描)│  强制修复   │          │           │          │
+├──────────┤            │ distill  │──确认──→  │CLAUDE.md │──自动加载→ Agent 行为改变
+│ ruflo DB │──┐         │   .py    │  写入     │          │
+│ (SQLite) │  ├──汇总──→│          │           │          │
+│.learnings│──┘    去重  │          │           │          │
 │ (*.md)   │      分类   │          │           │          │
 └──────────┘     原子化  └──────────┘           └──────────┘
 ```
@@ -109,7 +112,7 @@ block = format_block(categories)    # 原子化拆分 + 打标签(FACT/RULE/GOTC
 - `RULE` ⚙️ — 规则（"必须先 read 再 write"）
 - `GOTCHA` ⚠️ — 踩坑（"pytest 会收集 import 的 test_* 函数"）
 
-## 反幻觉规则
+## 反幻觉规则 + 机械化执行
 
 写入 CLAUDE.md 最前面的三条强制规则，预防 AI 编码幻觉：
 
@@ -125,21 +128,31 @@ block = format_block(categories)    # 原子化拆分 + 打标签(FACT/RULE/GOTC
 先读同类模块的实现，遵循已有模式。
 ```
 
-> 反幻觉 = 前置过滤器（预防），ruflo = 后置安全网（兜底）。
+但规则是"建议"，Agent 可能忘记遵守。所以加了第二层——**ast-grep 机械化执行**：
+
+```
+CC 写/编辑 .py 文件 → PostToolUse hook 同步触发 ast-grep
+                    → 违规信息注入 Agent 上下文 → Agent 被迫修复
+```
+
+8 条规则覆盖：裸 except、可变默认参数、eval/exec、吞异常、async 阻塞、星号导入、硬编码密钥、print 残留。规则是 YAML 配置，可持续扩展。
+
+> 三层防御：软约束（预防）→ 硬执行（拦截）→ 后置记录（兜底蒸馏）。
 
 ## 完整工作流
 
 ```
-superpowers 脑爆 → superpowers plan → Claude Code 执行（ruflo 自动挂载）
+superpowers 脑爆 → superpowers plan → Claude Code 执行（ruflo + ast-grep 自动挂载）
          ↑                                    ↓
          └──── CLAUDE.md 自动加载 ←── distill.py 蒸馏 ←──┘
 ```
 
 1. **脑爆**：讨论需求，发散方案
 2. **计划**：写结构化 plan，确认后动手
-3. **执行**：CC 按 plan 编码，ruflo 自动记录经验
-4. **蒸馏**：cron 每天汇总 → 人工确认 → 写入 CLAUDE.md
-5. **加载**：下次 session 自动生效
+3. **执行**：CC 按 plan 编码，ast-grep 实时拦截反模式，ruflo 自动记录经验
+4. **审查**（可选）：日常用 code-reviewer，合并前用 `/fagan-review`（双 Agent 并行审查）
+5. **蒸馏**：cron 每天汇总 → 人工确认 → 写入 CLAUDE.md
+6. **加载**：下次 session 自动生效
 
 详见 [docs/architecture.md](docs/architecture.md)
 
@@ -162,6 +175,7 @@ superpowers 脑爆 → superpowers plan → Claude Code 执行（ruflo 自动挂
 
 - Python 3.10+（标准库，零依赖）
 - Claude Code — AI Coding Agent
+- ast-grep — AST 级代码扫描，PostToolUse hook 机械化执行
 - ruflo — MCP 工具，自动记录编码经验
 - OpenClaw — 定时任务 + 通知推送（可选）
 
