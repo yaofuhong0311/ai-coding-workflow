@@ -18,6 +18,12 @@ from pathlib import Path
 CODING_ROOT = Path.home() / "coding"
 CLAUDE_MD = Path.home() / ".claude" / "CLAUDE.md"
 PENDING_FILE = Path.home() / ".openclaw/workspace/memory/distill-pending.json"
+
+# 项目级 CLAUDE.md 映射：project名 → 文件路径
+PROJECT_CLAUDE_MD = {
+    "agent2agent": CODING_ROOT / "agent2agent" / "CLAUDE.md",
+    "cip_backend": CODING_ROOT / "cip_backend" / "CLAUDE.md",
+}
 DRY_RUN = "--dry-run" in sys.argv
 COMMIT = "--commit" in sys.argv
 
@@ -251,25 +257,42 @@ TAG_EMOJI = {"FACT": "📌", "RULE": "⚙️", "GOTCHA": "⚠️"}
 # ─── 格式化 ────────────────────────────────────────────────────────────────────
 
 def format_block(categories):
+    """按项目分组格式化，返回 {target_file: block_content} 字典"""
     today = datetime.now().strftime("%Y-%m-%d")
-    lines = [f"\n> 最近蒸馏时间：{today}\n"]
+
+    # 先按目标文件分桶
+    buckets = {}  # target_path -> {cat -> [items]}
     for cat, items in categories.items():
-        if not items:
-            continue
-        lines.append(f"\n### {cat}\n")
         for m in items:
             proj = m["project"]
-            content = m["content"].strip()
-            atoms = atomize_content(content)
-            if not atoms:
-                # fallback：原始内容截断
-                text = content.split("\n")[0][:120]
-                lines.append(f"- 📌[{proj}][FACT] {text}")
-            else:
-                for tag, atom in atoms:
-                    emoji = TAG_EMOJI.get(tag, "📌")
-                    lines.append(f"- {emoji}[{proj}][{tag}] {atom}")
-    return "\n".join(lines)
+            target = PROJECT_CLAUDE_MD.get(proj, CLAUDE_MD)
+            if target not in buckets:
+                buckets[target] = {}
+            if cat not in buckets[target]:
+                buckets[target][cat] = []
+            buckets[target][cat].append(m)
+
+    # 格式化每个目标文件的内容
+    result = {}
+    for target, cats in buckets.items():
+        lines = [f"\n> 最近蒸馏时间：{today}\n"]
+        for cat, items in cats.items():
+            if not items:
+                continue
+            lines.append(f"\n### {cat}\n")
+            for m in items:
+                proj = m["project"]
+                content = m["content"].strip()
+                atoms = atomize_content(content)
+                if not atoms:
+                    text = content.split("\n")[0][:120]
+                    lines.append(f"- 📌[{proj}][FACT] {text}")
+                else:
+                    for tag, atom in atoms:
+                        emoji = TAG_EMOJI.get(tag, "📌")
+                        lines.append(f"- {emoji}[{proj}][{tag}] {atom}")
+        result[target] = "\n".join(lines)
+    return result
 
 
 def format_preview(categories):
@@ -299,22 +322,30 @@ def format_preview(categories):
 
 # ─── 写入 CLAUDE.md ────────────────────────────────────────────────────────────
 
-def write_to_claude_md(experience_block):
-    content = CLAUDE_MD.read_text(encoding="utf-8")
-    pattern = f"{re.escape(EXPERIENCE_START)}.*?{re.escape(EXPERIENCE_END)}"
-    replacement = f"{EXPERIENCE_START}\n{experience_block}\n{EXPERIENCE_END}"
-    new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-    CLAUDE_MD.write_text(new_content, encoding="utf-8")
-    print(f"✅ 已写入 {CLAUDE_MD}")
+def write_to_claude_md(experience_blocks):
+    """experience_blocks: {target_path: block_content} 字典"""
+    for target, block in experience_blocks.items():
+        if not target.exists():
+            print(f"⚠️  目标文件不存在，跳过: {target}")
+            continue
+        content = target.read_text(encoding="utf-8")
+        pattern = f"{re.escape(EXPERIENCE_START)}.*?{re.escape(EXPERIENCE_END)}"
+        def _repl(m):
+            return f"{EXPERIENCE_START}\n{block}\n{EXPERIENCE_END}"
+        new_content = re.sub(pattern, _repl, content, flags=re.DOTALL)
+        target.write_text(new_content, encoding="utf-8")
+        print(f"✅ 已写入 {target}")
 
 
-def write_pending(experience_block, total_count, preview):
+def write_pending(experience_blocks, total_count, preview):
     today = datetime.now().strftime("%Y-%m-%d")
+    # 把 Path key 转成字符串存 JSON
+    blocks_serializable = {str(k): v for k, v in experience_blocks.items()}
     pending = {
         "date": today,
         "total_count": total_count,
         "preview": preview,
-        "experience_block": experience_block,
+        "experience_blocks": blocks_serializable,
         "timestamp": int(datetime.now().timestamp()),
         "status": "pending"
     }
@@ -329,10 +360,15 @@ def main():
     if COMMIT:
         if PENDING_FILE.exists():
             pending = json.loads(PENDING_FILE.read_text())
-            write_to_claude_md(pending["experience_block"])
+            # 兼容旧格式（experience_block 单字符串）和新格式（experience_blocks 字典）
+            if "experience_blocks" in pending:
+                blocks = {Path(k): v for k, v in pending["experience_blocks"].items()}
+            else:
+                blocks = {CLAUDE_MD: pending["experience_block"]}
+            write_to_claude_md(blocks)
             pending["status"] = "committed"
             PENDING_FILE.write_text(json.dumps(pending, ensure_ascii=False, indent=2))
-            print(f"✅ 蒸馏完成，共 {pending['total_count']} 条经验写入 CLAUDE.md")
+            print(f"✅ 蒸馏完成，共 {pending['total_count']} 条经验写入")
         else:
             print("⚠️  没有 pending 文件")
         return
@@ -349,16 +385,18 @@ def main():
     print(f"📊 去重后：{len(deduped)} 条")
 
     categories = categorize(deduped)
-    experience_block = format_block(categories)
+    experience_blocks = format_block(categories)
     preview = format_preview(categories)
 
     if DRY_RUN:
         print("\n=== [DRY RUN] 蒸馏预览 ===")
-        print(experience_block)
+        for target, block in experience_blocks.items():
+            print(f"\n--- 写入: {target} ---")
+            print(block)
         print("=== 未写入 ===")
         return
 
-    write_pending(experience_block, len(deduped), preview)
+    write_pending(experience_blocks, len(deduped), preview)
 
 
 if __name__ == "__main__":
