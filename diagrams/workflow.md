@@ -8,11 +8,11 @@ flowchart TD
         A[需求/任务] --> B[superpowers 脑爆<br/>发散思路、探索方案]
         B --> C[superpowers plan<br/>写结构化计划]
         C --> D[用户确认 plan]
-        D --> E[Claude Code 执行<br/>ruflo + ast-grep 自动挂载]
+        D --> E[Claude Code 执行<br/>ruflo + quality-gate 自动挂载]
     end
 
     subgraph Phase2["Phase 2: 实时质量控制 + 经验采集"]
-        E --> F1[ast-grep hook<br/>同步扫描 Python 反模式]
+        E --> F1[quality-gate hook<br/>同步检查 Python 代码]
         F1 -->|违规| F2[注入上下文<br/>强制修复]
         F2 --> E
         F1 -->|通过| F[ruflo memory.db<br/>SQLite 存储]
@@ -71,7 +71,7 @@ flowchart LR
 
     subgraph Layer2["第二层：硬执行"]
         B --> C[Claude Code<br/>执行编码]
-        C --> D{ast-grep<br/>PostToolUse hook}
+        C --> D{quality-gate<br/>PostToolUse hook}
         D -->|违规| E[注入上下文<br/>强制修复]
         E --> C
         D -->|通过| F[代码写入成功]
@@ -94,7 +94,7 @@ flowchart LR
 flowchart TD
     A[代码变更] --> B{审查场景?}
     B -->|日常开发<br/>每个 task 完成后| C[superpowers<br/>code-reviewer<br/>单 Agent 快速审查]
-    B -->|合并到 main<br/>安全敏感代码| D[/fagan-review<br/>双 Agent 并行审查]
+    B -->|合并到 main<br/>安全敏感代码| D["/fagan-review<br/>双 Agent 并行审查"]
 
     D --> E[Agent A: 结构检查<br/>ast-grep + ruff + checklist]
     D --> F[Agent B: 语义检查<br/>设计/逻辑/架构/安全]
