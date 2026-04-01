@@ -22,7 +22,7 @@ AI Coding Agent（Claude Code / Cursor / Copilot）有两个结构性缺陷：
 
 **软约束**解决的是意识问题：告诉 Agent "先读再写、不要编造、遵循现有模式"。覆盖面广，但 Agent 可能忘。
 
-**硬执行**解决的是遗忘问题：Agent 写了 `except: pass`，不管它记不记得规则，ast-grep 都会在文件保存后 1 秒内扫到，把违规信息塞回 Agent 上下文，Agent 被迫看到并修复。不可绕过。
+**硬执行**解决的是遗忘问题：Agent 写了问题代码，不管它记不记得规则，python-quality-gate.sh 都会在文件保存后立即扫到，把违规信息塞回 Agent 上下文，Agent 被迫看到并修复。机械触发，不依赖 AI 自觉。
 
 **后置记录**解决的是积累问题：这次踩的坑记下来，蒸馏成规则，下次 session 自动加载。Agent 从"每次重新开始"变成"站在之前的经验上继续"。
 
@@ -43,11 +43,11 @@ brainstorm → plan → execute → distill → 下次 session 自动加载
 
 **brainstorm**：先和 Agent 讨论需求、发散方案、对齐方向。不让 Agent 直接开写——它会按自己的理解抢跑，做完才发现方向错了。
 
-**plan**：写结构化实施计划，确认后再动手。和人类工程师一样：先对齐，再执行。
+**plan**：写结构化实施计划，保存到当前项目 `docs/plans/`（`find-plan.sh` 优先从项目目录查找，回退到 `~/coding/.plans/`）。plan.md 建议包含 `## 核心约束` 章节，PreToolUse hook 会自动提取注入上下文。
 
 **execute**：按 plan 逐步实现。这个阶段三层防御同时生效：
 - CLAUDE.md 规则约束行为模式（先读再写、不编造）
-- ast-grep hook 拦截 Python 反模式（每次文件保存自动扫描）
+- python-quality-gate.sh hook 拦截 Python 问题代码（每次文件保存自动触发）
 - ruflo 自动记录经验，.learnings 捕获错误和纠正
 
 **distill**：每天自动汇总所有项目的经验，去重、分类、原子化，人工确认后写入 CLAUDE.md。
@@ -64,24 +64,21 @@ brainstorm → plan → execute → distill → 下次 session 自动加载
 
 > 设计哲学：与其让 AI 变得更"聪明"，不如让它变得更"谨慎"。大部分 coding 错误不是能力不足，而是太自信。
 
-### 第二层：硬执行（ast-grep 机械化检查）
+### 第二层：硬执行（python-quality-gate.sh 机械化检查）
 
-Agent 每次写/编辑 `.py` 文件后，PostToolUse hook 同步触发 ast-grep 扫描。违规信息注入 Agent 上下文，Agent 必须修复后才能继续。
+Agent 每次写/编辑 `.py` 文件后，PostToolUse hook 同步触发 `~/.claude/hooks/python-quality-gate.sh`。违规信息注入 Agent 上下文，Agent 修复后才能继续。
 
-当前覆盖 8 类 Python 反模式：
+**机制说明：** 输出驱动，不依赖 exit code。脚本有 stdout 输出 → AI 收到 ⚠️ 自动修复；无输出 = 通过。
 
-| 规则 | 捕获什么 | 为什么重要 |
-|------|---------|-----------|
-| bare-except | `except:` 不指定类型 | 连 Ctrl+C 都被吃掉 |
-| mutable-default-arg | `def foo(bar=[])` | 可变默认参数导致诡异 bug |
-| eval-exec-usage | `eval()/exec()` | 安全漏洞 |
-| empty-except-pass | `except: pass` | 错误被静默吞掉 |
-| blocking-in-async | async 里用 `time.sleep()` | 阻塞整个事件循环 |
-| star-import | `from x import *` | 命名空间污染 |
-| hardcoded-credentials | 硬编码密码/密钥 | 泄露到 git 历史 |
-| print-in-production | 非测试文件中 `print()` | 生产代码应该用 logging |
+当前检查项：
 
-规则是 YAML 配置，可持续扩展。发现新的高频反模式，加一条规则就永久生效。
+| 检查 | 工具 | 触发条件 |
+|------|------|---------|
+| lint（未使用 import、代码规范等）| ruff check | ruff exit code != 0 |
+| hardcode 端口 | grep | port=5000/8080 等赋值或 bind() 调用 |
+| 文件行数 | wc -l | 超过 500 行 |
+
+规则在脚本里维护，可持续扩展。发现新的高频问题，加一段检查永久生效。
 
 ### 第三层：后置记录 + 蒸馏
 
@@ -121,7 +118,8 @@ Agent 每次写/编辑 `.py` 文件后，PostToolUse hook 同步触发 ast-grep 
 ## 技术栈
 
 - **Claude Code** — AI Coding Agent
-- **ast-grep** — AST 级代码扫描，PostToolUse hook 机械化执行
+- **ast-grep** — AST 级代码扫描（可选，更精确的反模式检查）
+- **ruff** — Python lint 工具，python-quality-gate.sh 的核心检查工具
 - **ruflo** — MCP 工具，自动记录编码经验
 - **distill.py** — 经验蒸馏脚本（Python 3.10+，零依赖）
 - **OpenClaw** — 定时任务 + 通知推送（可选）

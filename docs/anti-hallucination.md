@@ -60,42 +60,39 @@ ruflo       = 后置安全网（兜底）
 
 但这里有一个缺口：**规则是"建议"，不是"强制"。** Agent 可能忘记遵守规则，而 ruflo 只是事后记录，不能阻止错误发生。
 
-加入 ast-grep 后，变成三层：
+加入 python-quality-gate.sh 后，变成三层：
 
 ```
 反幻觉规则 = 软约束（预防）     ← CLAUDE.md 里的行为指导，Agent 可能忘记
-ast-grep   = 硬执行（拦截）     ← PostToolUse hook 机械扫描，不可绕过
+ruff/脚本  = 硬执行（拦截）     ← PostToolUse hook 机械触发，不依赖 AI 自觉
 ruflo      = 后置记录（兜底）   ← 记录行为和错误，用于蒸馏改进
 ```
 
 ### 软约束 vs 硬执行
 
-| 维度 | 软约束（反幻觉规则） | 硬执行（ast-grep） |
-|------|---------------------|-------------------|
+| 维度 | 软约束（反幻觉规则） | 硬执行（python-quality-gate.sh） |
+|------|---------------------|----------------------------------|
 | 载体 | CLAUDE.md 文本 | PostToolUse hook |
-| 执行方式 | Agent 自觉遵守 | 机械扫描，违规注入上下文 |
-| 可绕过 | 可以（Agent 忘了就跳过） | 不可以（同步 hook，写完自动触发） |
-| 覆盖范围 | 广泛（行为模式） | 精确（8 类具体反模式） |
-| 适合什么 | 通用行为准则 | 可机械判定的代码缺陷 |
+| 执行方式 | Agent 自觉遵守 | 机械触发，违规注入上下文 |
+| 可绕过 | 可以（Agent 忘了就跳过） | 不可以（写文件自动触发） |
+| 覆盖范围 | 广泛（行为模式） | 精确（配置的检查项） |
+| 适合什么 | 通用行为准则 | 可机械判定的代码问题 |
 
-ast-grep 覆盖的 8 类 Python 反模式：
+python-quality-gate.sh 当前检查项：
 
-| 规则 | 严重度 | 捕获什么 |
-|------|--------|---------|
-| `bare-except` | error | `except:` 不指定异常类型 |
-| `mutable-default-arg` | error | `def foo(bar=[])` 可变默认参数 |
-| `eval-exec-usage` | error | `eval()/exec()` 安全风险 |
-| `empty-except-pass` | warning | `except: pass` 吞掉错误 |
-| `blocking-in-async` | error | async 函数内用 `time.sleep()` |
-| `star-import` | warning | `from x import *` 污染命名空间 |
-| `hardcoded-credentials` | error | 硬编码密码/密钥/token |
-| `print-in-production` | warning | 非测试文件中的 `print()` |
+| 检查 | 工具 | 触发条件 |
+|------|------|---------|
+| lint（未使用 import、代码规范等）| ruff check | ruff exit code != 0 |
+| hardcode 端口 | grep | port=5000/8080 等赋值或 bind() |
+| 文件行数超限 | wc -l | 超过 500 行 |
+
+**机制**：输出驱动，不依赖 exit code。脚本有 stdout 输出 → AI 收到 ⚠️ 自动修复；无输出 = 通过。
 
 ### 为什么需要硬执行？
 
-软约束的问题：**Agent 最容易犯错的时候，恰恰是最容易忘记规则的时候。** 复杂任务中 Agent 专注于实现逻辑，"先读再写"这类规则会被优先级更高的目标挤掉。
+软约束的问题：**Agent 最容易犯错的时候，恰恰是最容易忘记规则的时候。** 复杂任务中 Agent 专注于实现逻辑，规则会被优先级更高的目标挤掉。
 
-硬执行不依赖 Agent 的自觉，而是在 Agent 产出代码后立即机械检查。违规信息直接注入 Agent 上下文，Agent 被迫看到并修复。
+硬执行不依赖 Agent 的自觉，而是在 Agent 产出代码后立即机械触发检查。违规信息直接注入 Agent 上下文，Agent 被迫看到并修复。
 
 ## 效果评估
 

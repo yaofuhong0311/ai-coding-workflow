@@ -97,7 +97,7 @@ Procedural Memory（程序记忆）
 ```mermaid
 flowchart TD
     A[编码任务] --> B[Claude Code 执行]
-    B --> C{ast-grep hook}
+    B --> C{quality-gate hook}
     C -->|违规| C1[注入上下文<br/>强制修复]
     C1 --> B
     C -->|通过| C2{ruflo hooks}
