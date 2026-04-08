@@ -23,6 +23,7 @@ PENDING_FILE = Path.home() / ".openclaw/workspace/memory/distill-pending.json"
 PROJECT_CLAUDE_MD = {
     "agent2agent": CODING_ROOT / "agent2agent" / "CLAUDE.md",
     "cip_backend": CODING_ROOT / "cip_backend" / "CLAUDE.md",
+    "frontisAI-backend": CODING_ROOT / "frontisAI-backend" / "CLAUDE.md",
 }
 DRY_RUN = "--dry-run" in sys.argv
 COMMIT = "--commit" in sys.argv
