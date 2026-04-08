@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/python-quality-gate.sh",
+            "statusMessage": "🔍 Python quality gate..."
+          }
+        ]
+      }
+    ],
+
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/pre-tool-use-write.sh",
+            "statusMessage": "🔒 检查约束..."
+          }
+        ]
+      }
+    ],
+
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PLAN=$(bash ~/.claude/hooks/find-plan.sh); if [ -n \"$PLAN\" ]; then echo \"📋 当前 Plan: $(basename $PLAN)\"; echo '核心约束:'; sed -n '/## 核心约束/,/^##/p' \"$PLAN\" | grep -v '^##' | grep -v '^$' | head -10; fi"
+          }
+        ]
+      }
+    ],
+
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); PROMPT=$(echo \"$INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('prompt',''))\" 2>/dev/null || echo ''); IS_COMPLEX=$(echo \"$PROMPT\" | python3 -c \"import sys; p=sys.stdin.read().lower(); keywords=['实现','写','开发','重构','设计','创建','新增','修复','优化','搭建','implement','write','develop','refactor','design','create','fix','build']; print('yes' if any(k in p for k in keywords) else 'no')\"); if [ \"$IS_COMPLEX\" = \"yes\" ]; then EXTRA=''; PLAN=$(bash ~/.claude/hooks/find-plan.sh 2>/dev/null); if [ -n \"$PLAN\" ]; then TASK_COUNT=$(grep -cE '^[0-9]+\\.' \"$PLAN\" 2>/dev/null || echo 0); if [ \"$TASK_COUNT\" -ge 2 ]; then EXTRA=\"\\n\\n⚠️ [Swarm 强制指令] plan.md 检测到 ${TASK_COUNT} 个任务。必须使用 Swarm Agent 模式：1) hive-mind_init + hive-mind_spawn 注册 workers 2) 在同一条回复中同时调用 ${TASK_COUNT} 个 Agent 工具并行执行 3) 禁止串行逐步执行。\"; fi; fi; python3 -c \"import json,sys; extra=sys.argv[1]; print(json.dumps({'hookSpecificOutput':{'hookEventName':'UserPromptSubmit','additionalContext':'[任务开始] 这是一个编码任务。请先查询历史经验，完成后记录本次经验。' + extra}}))\" \"$EXTRA\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

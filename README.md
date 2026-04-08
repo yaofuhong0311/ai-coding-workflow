@@ -24,7 +24,8 @@ cp hooks/find-plan.sh ~/.claude/hooks/
 cp hooks/pre-tool-use-write.sh ~/.claude/hooks/
 chmod +x ~/.claude/hooks/*.sh
 
-# 4. 配置 hooks（在 ~/.claude/settings.json 里加入，参考 docs/architecture.md）
+# 4. 复制 settings.json 模板（如已有则手动合并 hooks 部分）
+cp templates/settings.json.template ~/.claude/settings.json
 ```
 
 **可选增强**：
