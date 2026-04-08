@@ -1,5 +1,7 @@
 # 经验蒸馏系统设计
 
+> 适用范围：Python + Claude Code 开发场景
+
 ## 问题
 
 AI Coding Agent 每次 session 都是全新开始。它不记得：
@@ -82,7 +84,7 @@ Procedural Memory（程序记忆）
 - 其余 → `FACT` 📌
 
 **5. 人工审核**
-蒸馏结果不自动写入。通过 OpenClaw → 飞书推送预览，用户回复「确认蒸馏」后才写入。
+蒸馏结果不自动写入。通过 OpenClaw → 飞书推送预览，用户回复「确认蒸馏」后才写入。（OpenClaw 为私有工具，可替换为任意 cron + 通知方案，或直接手动运行 distill.py --commit）
 
 这个 Human-in-the-Loop 环节防止低质量或错误的经验进入规则库。
 
@@ -94,6 +96,7 @@ Procedural Memory（程序记忆）
 
 ## 架构图
 
+<!-- OpenClaw 可替换为 cron + 任意通知渠道 -->
 ```mermaid
 flowchart TD
     A[编码任务] --> B[Claude Code 执行]
