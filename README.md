@@ -38,14 +38,28 @@ AI Coding Agent（Claude Code / Cursor / Copilot）有两个结构性缺陷：
 ## 工作流
 
 ```
-brainstorm → plan → execute → distill → 下次 session 自动加载
+brainstorm → plan → execute (Swarm 并行) → distill → 下次 session 自动加载
 ```
 
 **brainstorm**：先和 Agent 讨论需求、发散方案、对齐方向。不让 Agent 直接开写——它会按自己的理解抢跑，做完才发现方向错了。
 
 **plan**：写结构化实施计划，保存到当前项目 `docs/plans/`（`find-plan.sh` 优先从项目目录查找，回退到 `~/coding/.plans/`）。plan.md 建议包含 `## 核心约束` 章节，PreToolUse hook 会自动提取注入上下文。
 
-**execute**：按 plan 逐步实现。这个阶段三层防御同时生效：
+**execute**：按 plan 执行。如果 plan 拆出了 2 个以上互不依赖的任务，自动进入 **Swarm Agent 并行模式**：
+
+```
+Queen（主 Claude 进程）读取 plan.md
+    ↓
+拆解独立任务，分析依赖关系
+    ↓
+Ruflo hive-mind 注册 Worker（状态追踪 + 共享记忆）
+    ↓
+为每个 Worker 启动一个 CC 内置子 Agent（真·并行子进程）
+    ↓
+所有子 Agent 并行执行 → 结果返回 Queen → 汇总
+```
+
+单任务或有强依赖的任务仍然串行执行。三层防御在串行和并行模式下都生效：
 - CLAUDE.md 规则约束行为模式（先读再写、不编造）
 - python-quality-gate.sh hook 拦截 Python 问题代码（每次文件保存自动触发）
 - ruflo 自动记录经验，.learnings 捕获错误和纠正
@@ -70,16 +84,6 @@ Agent 每次写/编辑 `.py` 文件后，PostToolUse hook 同步触发 `~/.claud
 
 **机制说明：** 输出驱动，不依赖 exit code。脚本有 stdout 输出 → AI 收到 ⚠️ 自动修复；无输出 = 通过。
 
-当前检查项：
-
-| 检查 | 工具 | 触发条件 |
-|------|------|---------|
-| lint（未使用 import、代码规范等）| ruff check | ruff exit code != 0 |
-| hardcode 端口 | grep | port=5000/8080 等赋值或 bind() 调用 |
-| 文件行数 | wc -l | 超过 500 行 |
-
-规则在脚本里维护，可持续扩展。发现新的高频问题，加一段检查永久生效。
-
 ### 第三层：后置记录 + 蒸馏
 
 **采集**：ruflo（MCP 工具）通过 hooks 自动记录编码过程中的经验；.learnings/ 文件捕获错误、纠正、最佳实践。
@@ -92,6 +96,55 @@ Agent 每次写/编辑 `.py` 文件后，PostToolUse hook 同步触发 `~/.claud
 5. 人工确认后写入 CLAUDE.md
 
 **参考**：三层记忆模型借鉴 PlugMem 论文（arXiv:2603.03296）——Episodic（原始经验）→ Semantic（蒸馏提炼）→ Procedural（内化为规则）。
+
+## Swarm Agent 并行执行
+
+当 plan.md 包含多个互不依赖的任务时，execute 阶段自动切换为并行模式。
+
+### 架构
+
+```
+                Queen（主 Claude 进程）
+                ├── 读取 plan.md，拆解任务
+                ├── Ruflo hive-mind：注册 Worker（状态追踪）
+                │
+                └── 同时调用 N 个 CC 内置 Agent（并行子进程）
+                     ├── Worker-1 → CC Agent 子进程 1（独立 token、独立 tool use）
+                     ├── Worker-2 → CC Agent 子进程 2
+                     └── Worker-N → CC Agent 子进程 N
+                           ↓
+                     并行执行 → 结果返回 Queen → Ruflo 更新状态
+```
+
+**两层职责分离：**
+
+| 层 | 工具 | 做什么 |
+|----|------|--------|
+| 协调层 | Ruflo hive-mind | Worker 注册、任务分配记录、共享记忆、claims 看板 |
+| 执行层 | CC 内置 Agent | 真正的并行子进程，每个 Agent 独立读写文件、执行命令 |
+
+Ruflo 是协调和状态管理工具，不启动进程。CC 内置 Agent 是实际的并行执行引擎。两者配合使用。
+
+### 并行规则
+
+- **无依赖的任务**：并行执行（如 routes.py 和 schemas.py 可以同时写）
+- **有依赖的任务**：串行执行（如先写 models.py，再写依赖它的 services.py）
+- **同一文件**：禁止并行修改，通过 Ruflo claims 系统分配文件归属
+- **触发条件**：plan.md 中有 2 个以上独立任务时自动触发，不需要人工指定
+
+### 观察进度
+
+执行过程中，所有子 Agent 在同一个终端窗口内并行显示：
+
+```
+● 4 agents running...
+├─ Worker-1: 实现 routes.py    · running
+├─ Worker-2: 实现 schemas.py   · running
+├─ Worker-3: 实现 services.py  · running
+└─ Worker-4: 写测试            · running
+```
+
+随时查看 Ruflo claims 看板获取任务分配和完成状态。
 
 ## 效果
 
@@ -117,12 +170,11 @@ Agent 每次写/编辑 `.py` 文件后，PostToolUse hook 同步触发 `~/.claud
 
 ## 技术栈
 
-- **Claude Code** — AI Coding Agent
-- **ast-grep** — AST 级代码扫描（可选，更精确的反模式检查）
-- **ruff** — Python lint 工具，python-quality-gate.sh 的核心检查工具
-- **ruflo** — MCP 工具，自动记录编码经验
+- **Claude Code** — AI Coding Agent，内置 Agent 工具支持并行子进程
+- **ruff** — Python lint 工具，python-quality-gate.sh 的核心检查引擎
+- **ruflo** — MCP 工具，提供 memory 记录、hive-mind 协调、claims 任务追踪
 - **distill.py** — 经验蒸馏脚本（Python 3.10+，零依赖）
-- **OpenClaw** — 定时任务 + 通知推送（可选）
+- **OpenClaw** — 定时任务 + 飞书通知推送 + 蒸馏审核流程
 
 ## License
 

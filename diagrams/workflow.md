@@ -4,37 +4,49 @@
 
 ```mermaid
 flowchart TD
-    subgraph Phase1["Phase 1: 脑爆 → 计划 → 执行"]
-        A[需求/任务] --> B[superpowers 脑爆<br/>发散思路、探索方案]
-        B --> C[superpowers plan<br/>写结构化计划]
+    subgraph Phase1["Phase 1: 脑爆 → 计划"]
+        A[需求/任务] --> B[脑爆<br/>发散思路、探索方案]
+        B --> C[写结构化计划<br/>plan.md]
         C --> D[用户确认 plan]
-        D --> E[Claude Code 执行<br/>ruflo + quality-gate 自动挂载]
     end
 
-    subgraph Phase2["Phase 2: 实时质量控制 + 经验采集"]
-        E --> F1[quality-gate hook<br/>同步检查 Python 代码]
-        F1 -->|违规| F2[注入上下文<br/>强制修复]
-        F2 --> E
-        F1 -->|通过| F[ruflo memory.db<br/>SQLite 存储]
-        E --> G[.learnings/ 文件<br/>Markdown 记录]
-        E --> H[用户纠正<br/>自动捕获]
+    subgraph Phase2["Phase 2: 执行（串行 or Swarm 并行）"]
+        D --> E{plan 有 2+ 独立任务?}
+        E -->|是| SW[Swarm 并行模式]
+        E -->|否| SE[串行执行]
+
+        subgraph Swarm["Swarm 并行执行"]
+            SW --> SW1[Queen 拆解任务]
+            SW1 --> SW2[Ruflo hive-mind<br/>注册 Worker]
+            SW2 --> SW3[并行启动 N 个<br/>CC 子 Agent]
+            SW3 --> SW4[Worker-1<br/>子进程]
+            SW3 --> SW5[Worker-2<br/>子进程]
+            SW3 --> SW6[Worker-N<br/>子进程]
+            SW4 --> SW7[Queen 汇总结果]
+            SW5 --> SW7
+            SW6 --> SW7
+        end
+
+        SE --> QG
+        SW7 --> QG
     end
 
-    subgraph Phase3["Phase 3: 蒸馏"]
+    subgraph Phase3["Phase 3: 质量控制 + 经验采集"]
+        QG[quality-gate hook<br/>检查 Python 代码]
+        QG -->|违规| QG2[注入上下文<br/>强制修复]
+        QG -->|通过| F[ruflo memory.db]
+        QG --> G[.learnings/ 记录]
+    end
+
+    subgraph Phase4["Phase 4: 蒸馏 & 内化"]
         I[Cron 19:00] --> J[distill.py]
         F --> J
         G --> J
-        J --> K[汇总所有项目]
-        K --> L[去重 by key]
-        L --> M[分类 6 类别]
-        M --> N[原子化拆分<br/>FACT/RULE/GOTCHA]
-    end
-
-    subgraph Phase4["Phase 4: 审核 & 内化"]
-        N --> O[OpenClaw → 飞书通知]
+        J --> K[汇总 → 去重 → 分类 → 原子化]
+        K --> O[OpenClaw → 飞书通知]
         O -->|确认蒸馏| P[写入 CLAUDE.md]
         O -->|跳过| Q[丢弃]
-        P --> R[下次 CC session<br/>自动加载]
+        P --> R[下次 CC session 自动加载]
         R --> A
     end
 
@@ -42,6 +54,7 @@ flowchart TD
     style Phase2 fill:#e3f2fd
     style Phase3 fill:#fff3e0
     style Phase4 fill:#fce4ec
+    style Swarm fill:#e8eaf6
 ```
 
 ## 蒸馏管道
@@ -86,6 +99,39 @@ flowchart LR
     style Layer1 fill:#ffebee
     style Layer2 fill:#fff3e0
     style Layer3 fill:#e3f2fd
+```
+
+## Swarm Agent 架构
+
+```mermaid
+flowchart TD
+    subgraph Queen["Queen（主 Claude 进程）"]
+        Q1[读取 plan.md] --> Q2[拆解独立任务]
+        Q2 --> Q3[Ruflo hive-mind<br/>注册 Worker + 分配任务]
+        Q3 --> Q4[同时调用 N 个<br/>CC 内置 Agent 工具]
+    end
+
+    subgraph Execution["并行执行层（CC 内置 Agent 子进程）"]
+        Q4 --> W1[Worker-1<br/>独立子进程<br/>独立 token]
+        Q4 --> W2[Worker-2<br/>独立子进程<br/>独立 token]
+        Q4 --> W3[Worker-N<br/>独立子进程<br/>独立 token]
+    end
+
+    subgraph Coordination["协调层（Ruflo hive-mind）"]
+        R1[shared memory<br/>共享记忆]
+        R2[claims board<br/>任务看板]
+        R3[Worker 状态追踪]
+    end
+
+    W1 --> RET[结果返回 Queen]
+    W2 --> RET
+    W3 --> RET
+    RET --> R2
+    RET --> R3
+
+    style Queen fill:#e8f5e9
+    style Execution fill:#e3f2fd
+    style Coordination fill:#fff3e0
 ```
 
 ## 代码审查体系
