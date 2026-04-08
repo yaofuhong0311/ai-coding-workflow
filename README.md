@@ -22,7 +22,7 @@ AI Coding Agent（Claude Code / Cursor / Copilot）有两个结构性缺陷：
 
 **软约束**解决的是意识问题：告诉 Agent "先读再写、不要编造、遵循现有模式"。覆盖面广，但 Agent 可能忘。
 
-**硬执行**解决的是遗忘问题：Agent 写了问题代码，不管它记不记得规则，python-quality-gate.sh 都会在文件保存后立即扫到，把违规信息塞回 Agent 上下文，Agent 被迫看到并修复。机械触发，不依赖 AI 自觉。
+**硬执行**解决的是遗忘问题：Agent 写了问题代码，不管它记不记得规则，python-quality-gate.sh 都会在文件保存后立即扫到，把违规信息塞回 Agent 上下文，Agent 被迫看到并修复。同理，UserPromptSubmit hook 检测到 plan.md 有多个独立任务时，强制注入 Swarm 执行指令——Agent 被迫走并行模式，不依赖自觉。机械触发，不可绕过。
 
 **后置记录**解决的是积累问题：这次踩的坑记下来，蒸馏成规则，下次 session 自动加载。Agent 从"每次重新开始"变成"站在之前的经验上继续"。
 

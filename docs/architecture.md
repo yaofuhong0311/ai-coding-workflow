@@ -150,7 +150,7 @@ CC 读取 plan.md 后，根据任务依赖关系自动选择执行模式：
       {
         "hooks": [
           {
-            "command": "检测编码任务关键词 → 注入 ruflo memory_search 指令",
+            "command": "检测编码关键词 → 注入 ruflo memory_search 指令；同时检测 plan.md 任务数，>= 2 则注入 Swarm 强制指令",
             "type": "command"
           }
         ]
@@ -177,7 +177,7 @@ CC 读取 plan.md 后，根据任务依赖关系自动选择执行模式：
 | `PostToolUse` (Write/Edit) | 每次写 .py 文件后 | python-quality-gate.sh 拦截问题代码 |
 | `PreToolUse` (Write/Edit) | 每次写文件前 | 注入 plan 核心约束到上下文 |
 | `PreCompact` | 上下文即将压缩时 | 保留 plan 核心约束不被压缩丢失 |
-| `UserPromptSubmit` | 用户发送消息时 | 编码任务自动触发 ruflo memory 查询 |
+| `UserPromptSubmit` | 用户发送消息时 | 编码任务 → 注入 ruflo memory 查询；检测到 plan.md 有 2+ 任务 → 强制注入 Swarm 执行指令 |
 | `SessionStart` | CC 启动时 | 确认 ruflo MCP 连接状态 |
 
 ## 为什么不直接起 CC 写代码？
