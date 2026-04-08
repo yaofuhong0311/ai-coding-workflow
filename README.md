@@ -8,11 +8,28 @@
 
 ## 快速开始
 
-1. 复制 `templates/CLAUDE.md.template` 到 `~/.claude/CLAUDE.md`
-2. 参考 docs/architecture.md 中的 Hooks 配置，在 `~/.claude/settings.json` 加入 hooks
-3. 把 `python-quality-gate.sh` 脚本放到 `~/.claude/hooks/`（内容参考 docs/architecture.md）
-4. （可选）安装 ruflo MCP，用于自动记录和查询编码经验
-5. （可选）配置 distill.py 定时任务，用于经验蒸馏
+**前提**：Claude Code 已安装，Python 项目。
+
+```bash
+# 1. 克隆本仓库
+git clone https://github.com/yaofuhong0311/ai-coding-workflow.git
+
+# 2. 复制全局规则模板
+cp templates/CLAUDE.md.template ~/.claude/CLAUDE.md
+
+# 3. 复制 hook 脚本
+mkdir -p ~/.claude/hooks
+cp hooks/python-quality-gate.sh ~/.claude/hooks/
+cp hooks/find-plan.sh ~/.claude/hooks/
+cp hooks/pre-tool-use-write.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/*.sh
+
+# 4. 配置 hooks（在 ~/.claude/settings.json 里加入，参考 docs/architecture.md）
+```
+
+**可选增强**：
+- 安装 [ruflo MCP](https://github.com/ruvnet/ruflo) 用于自动记录和查询编码经验
+- 配置 `distill.py` 定时任务用于经验蒸馏（见 docs/self-evolution.md）
 
 ## 问题
 
